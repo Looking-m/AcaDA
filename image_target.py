@@ -17,8 +17,6 @@ import random, pdb, math, copy
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 from sklearn.metrics import confusion_matrix
-from loss import KnowledgeDistillationLoss
-from randaugment import RandAugmentMC
 from sklearn.cluster import KMeans
 
 print(torch.cuda.device_count())
@@ -205,17 +203,14 @@ def getThreeData(three_data, three_label, num=5):
     return data_three2, label_three2
 
 def FieldAlignment(epoch, three_data, three_label, optimizer, featrues_bans, netF, netB, netC):
-    # 将原始域数据向着目标域中心拉近
+
     print('start domain alignment')
 
-    # 合并数据和标签
     if len(three_data) != 0:
         combined = list(zip(three_data, three_label))
 
-        # 打乱数据和标签
         random.shuffle(combined)
 
-        # 拆分回数据和标签
         three_data, three_label = zip(*combined)
         three_data = list(three_data)
         three_label = list(three_label)
@@ -230,7 +225,7 @@ def FieldAlignment(epoch, three_data, three_label, optimizer, featrues_bans, net
             labels2 = []
             labels3 = []
             inputs2 = []
-            for j in range(len(labels)):  # 按照样本数量来，每一个批次的样本数量
+            for j in range(len(labels)):  
                 class_data = featrues_bans[labels[j]]
                 array1 = []
                 for m in range(len(class_data)):
@@ -246,7 +241,7 @@ def FieldAlignment(epoch, three_data, three_label, optimizer, featrues_bans, net
             labels3 = torch.tensor(np.asarray(labels3)).cuda()
             inputs2 = torch.tensor(np.asarray(inputs2)).cuda()
 
-            adData = inputs2.clone()  # 复制一份数据
+            adData = inputs2.clone() 
             adData = adData.cuda()
             adData.requires_grad = True
             print(f'The{ind}-start domain shift compute')
@@ -260,10 +255,9 @@ def FieldAlignment(epoch, three_data, three_label, optimizer, featrues_bans, net
 
                 classLoss = nn.MSELoss()(output2, labels2)
 
-                adData.grad = None  # 梯度设置为none，马上就要计算了
-                classLoss.backward(retain_graph=True)  # 计算出分类损失的梯度
-                cgs = adData.grad  # 然后把梯度保存为cgs
-
+                adData.grad = None  
+                classLoss.backward(retain_graph=True)  
+                cgs = adData.grad 
                 cgsView = cgs.view(cgs.shape[0], -1)
                 cgsnorms = torch.norm(cgsView, dim=1) + 1e-18
                 cgsView /= cgsnorms[:, np.newaxis]
@@ -381,8 +375,7 @@ def train_target(args):
     optimizer2 = optim.SGD(param_group2, lr=args.lr)
     optimizer2 = op_copy(optimizer2)
 
-    max_iter = args.max_epoch * len(dset_loaders["target"])  # 全部迭代次数，每条数据迭代max_epoch次
-
+    max_iter = args.max_epoch * len(dset_loaders["target"])  
     print('initial data')
     loader = dset_loaders["target"]
     num_sample = len(loader.dataset)
@@ -400,7 +393,7 @@ def train_target(args):
         for _ in range(len(loader)):
             data = next(iter_test)
             inputs = data[0]
-            indx = data[2]  # 获取样本的全局索引
+            indx = data[2]  
             inputs = torch.tensor(np.asarray(inputs)).cuda()
             output = netB(netF(inputs))  # [64,256]
             outputs = netC(output)  # [64, 65]
@@ -408,7 +401,7 @@ def train_target(args):
             pred = torch.argmax(outputs, dim=1)  # [64]
 
             score_bank[indx] = outputs.detach().clone()
-            # 根据置信度高的预测标签来进行分类
+          
             for i in range(len(outputs)):
                 pr = outputs[i, pred[i]]
                 if pr > args.delta:
@@ -417,7 +410,7 @@ def train_target(args):
 
         three_data = []
         three_label = []
-        for batchNo, (data, labels, _) in enumerate(dset_loaders["three"]):  # 有标签的数据
+        for batchNo, (data, labels, _) in enumerate(dset_loaders["three"]):  
             for i in range(len(labels)):
                 three_data.append(data[i])
                 three_label.append(labels[i])
@@ -466,7 +459,6 @@ def train_target(args):
                 epoch_iter_num = 2
             for it in range(epoch_iter_num):
 
-                # 使用聚类空间的距离来判断
                 array1 = np.asarray((dd[tar_idx]))
                 array2 = np.asarray((dd2[tar_idx]))
                 distance1 = [min(batch) for batch in array1]
@@ -475,14 +467,13 @@ def train_target(args):
                 distance2_inx = [batch.argmin(axis=0) for batch in array2]
                 pred = []
                 for inx in range(len(distance1)):
-                    if distance1[inx] <= (1 + epoch * args.decay) * distance2[inx]:  # 在这种劣势情况下依旧认为是自己好
+                    if distance1[inx] <= (1 + epoch * args.decay) * distance2[inx]:  
                         pred.append(distance1_inx[inx])
                     else:
-                        # 如果distance2_inx[inx]这个下标在distance1_inx中没有则直接过滤，保持distance1_inx是干净的
                         sta = False
                         for j in range(len(distance1_inx)):
                             if distance2_inx[inx] == distance1_inx[j]:
-                                sta = True  # 如果有则赋值
+                                sta = True 
                                 break
                         if sta:
                             pred.append(distance2_inx[inx])
@@ -509,7 +500,7 @@ def train_target(args):
                     score_bank[tar_idx] = outputs_test_w.detach().clone()
                     pred_w = torch.argmax(outputs_test_w, dim=1)
                     for k in range(len(outputs_test_w)):
-                        if outputs_test_w[k, pred_w[k]] > args.delta:  # 当前概率最高的位置概率是否大于阈值
+                        if outputs_test_w[k, pred_w[k]] > args.delta:
                             t = {'pr': outputs_test_w[k].detach().cpu().clone(),
                                  'ft': features_test_w[k].detach().cpu().clone()}
                             featrues_bans[pred_w[k]].append(t)
@@ -679,8 +670,8 @@ if __name__ == "__main__":
     parser.add_argument('--layer', type=str, default="wn", choices=["linear", "wn"])
     parser.add_argument('--classifier', type=str, default="bn", choices=["ori", "bn"])
     parser.add_argument('--distance', type=str, default='cosine', choices=["euclidean", "cosine"])
-    parser.add_argument('--output', type=str, default='/22085400428/SFuDA/SHOT-master/object/ckps/TS_005/')
-    parser.add_argument('--output_src', type=str, default='/22085400428/SFuDA/SHOT-master/object/ckps/source/')
+    parser.add_argument('--output', type=str, default='./ckps/TS/')
+    parser.add_argument('--output_src', type=str, default='./ckps/source/')
     parser.add_argument('--da', type=str, default='uda', choices=['uda', 'pda'])
     parser.add_argument('--issave', type=bool, default=True)
     args = parser.parse_args()
