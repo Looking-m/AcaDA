@@ -1,8 +1,10 @@
 # AcaDA
 # Prerequisites:
 python == 3.9<br>
-pytorch == 1.1.0<br>
-torchvision == 0.3.0<br>
+pytorch ==  2.3.0+cu118
+<br>
+torchvision == 0.18.0+cu118
+<br>
 numpy, scipy, sklearn, tqdm, argparse
 
 # Datasets
